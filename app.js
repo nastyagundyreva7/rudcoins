@@ -11,7 +11,36 @@ function eventCard(e){const base=Number(e.base_coins??e.base??0),date=e.event_da
 function renderEvents(filter='Все'){const cats=['Все',...new Set(events.map(e=>e.category).filter(Boolean))],filters=document.getElementById('filters');if(filters)filters.innerHTML=cats.map(c=>`<button class="filter ${c===filter?'on':''}" onclick="renderEvents('${esc(c).replace(/'/g,"\\'")}')">${esc(c)}</button>`).join('');const list=filter==='Все'?events:events.filter(e=>e.category===filter),html=list.map(eventCard).join('')||'<div class="empty">Мероприятий пока нет.</div>';const all=document.getElementById('allEvents');if(all)all.innerHTML=html;const home=document.getElementById('homeEvents');if(home)home.innerHTML=events.slice(0,3).map(eventCard).join('')}window.renderEvents=renderEvents;
 function renderProducts(){const html=`<article class="product"><div class="prodimg vibes"><span>🎟️</span></div><span class="tag">Сертификат</span><h3>Сертификат в Vibes</h3><div class="pfoot"><b>100 RDC</b><button onclick="buy('Сертификат в Vibes')">Обменять</button></div></article><article class="product"><div class="prodimg shirt"><span>👕</span></div><span class="tag">Мини-мерч</span><h3>Футболка РУДН</h3><div class="pfoot"><b>200 RDC</b><button onclick="buy('Футболка РУДН')">Обменять</button></div></div></article>`;document.querySelectorAll('#products,#homeProducts').forEach(el=>el.innerHTML=html)}
 async function registerStudent(event){event.preventDefault();const form=event.currentTarget,data=new FormData(form),email=String(data.get('email')||'').trim().toLowerCase(),password=String(data.get('password')||'');if(!email.endsWith('@rudn.ru'))return toast('Используйте почту РУДН в формате name@rudn.ru');if(password.length<8)return toast('Пароль должен содержать минимум 8 символов.');try{const result=await rudRpc('rud_register',{p_email:email,p_password:password,p_last:String(data.get('last')||'').trim(),p_first:String(data.get('first')||'').trim(),p_middle:String(data.get('middle')||'').trim(),p_group:String(data.get('group')||'').trim()});if(!result?.token)throw new Error('Сервер не вернул сессию. Нажмите «Повторить».');setSession(result.token);await refreshUser();form.reset();toast('Аккаунт создан. Добро пожаловать в RUD COIN!',true);show('profile')}catch(e){toast(e.message||'Не удалось зарегистрироваться.')}}window.registerStudent=registerStudent;
-async function demoLogin(event){event.preventDefault();const email=document.getElementById('loginEmail').value.trim().toLowerCase(),password=document.getElementById('loginPassword').value;if(!email||!password)return toast('Введите почту и пароль.');try{const result=await rudRpc('rud_login',{p_email:email,p_password:password});if(!result?.token)throw new Error('Сервер не вернул сессию. Нажмите «Повторить».');setSession(result.token);await refreshUser();toast('Вход выполнен.',true);show('profile')}catch(e){toast(e.message||'Не удалось войти.')}}window.demoLogin=demoLogin;
+async function demoLogin(event){
+  if(event)event.preventDefault();
+  const email=document.getElementById('loginEmail')?.value.trim().toLowerCase()||'';
+  const password=document.getElementById('loginPassword')?.value||'';
+  const form=document.querySelector('#login form');
+  const button=form?.querySelector('button[type="submit"]');
+  const notice=document.getElementById('loginFormNotice');
+  const setStatus=(message,isError=false)=>{if(notice){notice.textContent=message;notice.style.color=isError?'#b42318':'#1764e8'}};
+  if(!email||!password){setStatus('Введите почту и пароль.',true);toast('Введите почту и пароль.');return}
+  if(button){button.disabled=true;button.textContent='Выполняется вход…'}
+  setStatus('Проверяем данные и подключаемся к серверу авторизации…');
+  try{
+    const result=await rudRpc('rud_login',{p_email:email,p_password:password});
+    if(!result?.token)throw new Error('Сервер не вернул сессию. Попробуйте ещё раз.');
+    setSession(result.token);
+    const restored=await rudRpc('rud_restore',{p_token:result.token});
+    if(!restored?.profile)throw new Error('Вход выполнен, но профиль не удалось загрузить. Обратитесь к администратору.');
+    currentProfile=restored.profile;
+    currentUser={id:currentProfile.id,email:currentProfile.rudn_email};
+    updateHeader();
+    setStatus('Вход выполнен. Открываем профиль…');
+    toast('Вход выполнен.',true);
+    show('profile');
+  }catch(e){
+    setStatus(e?.message||'Не удалось выполнить вход. Проверьте соединение и повторите попытку.',true);
+    toast(e?.message||'Не удалось войти.');
+  }finally{
+    if(button){button.disabled=false;button.textContent='Войти'}
+  }
+}window.demoLogin=demoLogin;
 async function refreshUser(){currentUser=null;currentProfile=null;const token=sessionToken();if(!token){updateHeader();return}try{const result=await rudRpc('rud_restore',{p_token:token});if(!result?.profile){setSession('');updateHeader();return}currentProfile=result.profile;currentUser={id:currentProfile.id,email:currentProfile.rudn_email};updateHeader()}catch(e){setSession('');updateHeader();toast(e.message||'Не удалось восстановить сессию.')}}
 function updateHeader(){const actions=document.querySelector('.actions');if(!actions)return;actions.innerHTML=currentUser?`<button class="outline" onclick="show('wallet')">${esc(currentProfile?.coins??0)} RDC</button><button onclick="logout()">Выйти</button>`:'<button class="outline" onclick="show(\'login\')">Войти</button><button onclick="show(\'register\')">Регистрация</button>'}
 async function logout(){const token=sessionToken();if(token)try{await rudRpc('rud_logout',{p_token:token})}catch(_){}setSession('');currentUser=null;currentProfile=null;updateHeader();toast('Вы вышли из аккаунта.',true);show('home')}window.logout=logout;
